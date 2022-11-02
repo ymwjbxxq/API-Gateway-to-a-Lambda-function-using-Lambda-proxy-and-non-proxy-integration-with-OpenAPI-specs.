@@ -1,0 +1,389 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::Serverless-2016-10-31'
+
+##########################################################################
+#  Parameters                                                            #
+##########################################################################
+Parameters:
+  StageName:
+    Type: String
+  DynamoDBTableName:
+    Type: String
+  JwtArn:
+    Description: The arn of the jwt lambda
+    Type: String
+
+##########################################################################
+#  Global values that are applied to all resources                       #
+##########################################################################
+Globals:
+  Function:
+    MemorySize: 256
+    Architectures: ["arm64"]
+    Handler: bootstrap
+    Runtime: provided.al2
+    Timeout: 29
+    Environment:
+      Variables:
+        RUST_BACKTRACE: 1
+        RUST_LOG: info
+
+Resources:
+##########################################################################
+#  API Gateway CloudWatch Role                                           #
+##########################################################################
+  CloudWatchRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${AWS::StackName}-${AWS::Region}-${StageName}
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - apigateway.amazonaws.com
+            Action: 'sts:AssumeRole'
+      Path: /
+      ManagedPolicyArns:
+        - >-
+          arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs
+
+  ApiGwAccount:
+    Type: 'AWS::ApiGateway::Account'
+    Properties:
+      CloudWatchRoleArn: !GetAtt CloudWatchRole.Arn
+##########################################################################
+#  API Gateway REST API                                                  #
+##########################################################################
+  MyApi:
+    Type: AWS::Serverless::Api
+    DependsOn:
+      - AccessLogs
+    Properties:
+      Name: !Sub ${AWS::StackName}
+      StageName: !Ref StageName
+      DefinitionBody: # an OpenApi definition
+        'Fn::Transform':
+          Name: 'AWS::Include'
+          Parameters:
+            Location: './openapi.yaml'
+      OpenApiVersion: 3.0.3
+      Cors:
+        AllowMethods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+        AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Access-Control-Allow-Headers,Access-Control-Request-Method,Access-Control-Request-Headers'"
+        AllowOrigin: "'*'"
+      AccessLogSetting:
+        DestinationArn: !GetAtt AccessLogs.Arn
+        Format: '{ "requestId":"$context.requestId", "ip": "$context.identity.sourceIp", "requestTime":"$context.requestTime", "httpMethod":"$context.httpMethod","routeKey":"$context.routeKey", "status":"$context.status","protocol":"$context.protocol", "integrationStatus": $context.integrationStatus, "integrationLatency": $context.integrationLatency, "responseLength":"$context.responseLength" }'
+      DisableExecuteApiEndpoint: true
+      Auth:
+        AddDefaultAuthorizerToCorsPreflight: false
+        Authorizers:
+          jwt:
+            FunctionArn: !Ref JwtArn
+            FunctionPayloadType: REQUEST
+            Identity:
+              Context:
+                - httpMethod
+                - resourceId
+              Headers:
+                - Authorization
+            JwtConfiguration:
+              issuer: .....
+              audience: .....
+        DefaultAuthorizer: jwt
+        ResourcePolicy:
+          CustomStatements: [{
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "execute-api:Invoke",
+            "Resource": "execute-api:/*/*/*"
+          }]
+      Tags:
+        Name: myapi
+        Env: !Ref StageName
+
+  AccessLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 7
+      LogGroupName: !Sub "/${AWS::StackName}/${AWS::Region}-accessLogs"
+
+##########################################################################
+# List Lambda Function                                                   #
+##########################################################################
+  ListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../list
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: 
+                - dynamodb:Query
+              Resource: 
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}/index/*
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub ${DynamoDBTableName}
+      Events:
+        ApiEvents:
+          Type: Api
+          Properties:
+            Path: /list
+            Method: GET
+            RestApiId: !Ref MyApi
+            Auth:
+              Authorizer: jwt
+      Tags:
+        Name: list-ui
+        Env: !Ref StageName
+  
+  ListFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${ListFunction}"
+      RetentionInDays: 7
+
+  ListFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref ListFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/GET/list"
+
+##########################################################################
+# GET Lambda Function                                                    #
+##########################################################################
+  GetFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../get
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: 
+                - dynamodb:GetItem
+              Resource: 
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub ${DynamoDBTableName}
+      Events:
+        ApiEvents:
+          Type: Api
+          Properties:
+            Path: /
+            Method: GET
+            RestApiId: !Ref MyApi
+            Auth:
+              Authorizer: jwt
+            RequestModel:
+              Model: GetModel
+              Required: true
+              ValidateParameters: true
+            RequestParameters:
+              - method.request.querystring.key:
+                  Required: true
+      Tags:
+        Name: get-ui
+        Env: !Ref StageName
+  
+  GetFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${GetFunction}"
+      RetentionInDays: 7
+
+  GetFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref GetFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/GET/"
+
+##########################################################################
+# DELETE Lambda Function                                                 #
+##########################################################################
+  DeleteFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../delete
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: 
+                - dynamodb:DeleteItem
+              Resource: 
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub ${DynamoDBTableName}
+      Events:
+        ApiEvents:
+          Type: Api
+          Properties:
+            Path: /
+            Method: DELETE
+            RestApiId: !Ref MyApi
+            Auth:
+              Authorizer: jwt
+            RequestModel:
+              Model: GetModel
+              Required: true
+              ValidateParameters: true
+            RequestParameters:
+              - method.request.querystring.key:
+                  Required: true
+      Tags:
+        Name: delete-ui
+        Env: !Ref StageName
+  
+  DeleteFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${DeleteFunction}"
+      RetentionInDays: 7
+
+  DeleteFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref DeleteFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/DELETE/"
+
+##########################################################################
+# ADD Lambda Function                                                    #
+##########################################################################
+  AddFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../add
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: 
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub ${DynamoDBTableName}
+      Events:
+        ApiEvents:
+          Type: Api
+          Properties:
+            Path: /
+            Method: POST
+            RestApiId: !Ref MyApi
+            Auth:
+              Authorizer: jwt
+            RequestModel:
+              Model: AddModel
+              Required: true
+              ValidateBody: true
+      Tags:
+        Name: add-ui
+        Env: !Ref 
+  
+  AddFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AddFunction}"
+      RetentionInDays: 7
+
+  AddFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref AddFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/POST/"
+
+##########################################################################
+# Edit Lambda Function                                                    #
+##########################################################################
+  EditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../edit
+      Policies:
+        - AWSLambdaBasicExecutionRole
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action: 
+                - dynamodb:UpdateItem
+              Resource: 
+                - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${DynamoDBTableName}
+      Environment:
+        Variables:
+          TABLE_NAME: !Sub ${DynamoDBTableName}
+      Events:
+        ApiEvents:
+          Type: Api
+          Properties:
+            Path: /
+            Method: PATCH
+            RestApiId: !Ref MyApi
+            Auth:
+              Authorizer: jwt
+            RequestModel:
+              Model: EditModel
+              Required: true
+              ValidateParameters: true
+              ValidateBody: true
+            RequestParameters:
+              - method.request.querystring.key:
+                  Required: true
+      Tags:
+        Name: edit-ui
+        Env: !Ref StageName
+  
+  EditFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${EditFunction}"
+      RetentionInDays: 7
+
+  EditFunctionApiPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: "lambda:InvokeFunction"
+      FunctionName: !Ref EditFunction
+      Principal: "apigateway.amazonaws.com"
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${MyApi}/*/PATCH/"
+
+##########################################################################
+# OUTPUT                                                                 #
+##########################################################################
+Outputs:
+  HttpApiEndpoint:
+    Description: The ui endpoint.
+    Value: !Sub "https://${MyApi}.execute-api.${AWS::Region}.amazonaws.com/${StageName}/"
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndpoint
+  HttpApiDomainName:
+    Description: The domain name of the endpoint.
+    Value: !Sub "${MyApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Export:
+      Name: !Sub ${AWS::StackName}-DomainName
+  ApiId:
+    Description: Api id of REST API
+    Value:
+      Ref: MyApi
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiId
