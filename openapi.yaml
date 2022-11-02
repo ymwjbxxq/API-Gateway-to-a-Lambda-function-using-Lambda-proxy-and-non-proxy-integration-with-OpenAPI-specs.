@@ -1,0 +1,601 @@
+openapi: "3.0.1"
+
+paths:
+  /list:
+    get:
+      security:
+      - jwt: []
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ListFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        type: "aws_proxy"
+    options:
+      responses:
+        "200":
+          description: "200 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+      x-amazon-apigateway-integration:
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Access-Control-Allow-Headers,Access-Control-Request-Method,Access-Control-Request-Headers'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+            responseTemplates:
+              application/json: "{}\n"
+        requestTemplates:
+          application/json: "{\n  \"statusCode\" : 200\n}\n"
+        passthroughBehavior: "when_no_match"
+        type: "mock"
+  /:
+    get:
+      parameters:
+      - name: "key"
+        in: "query"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/getmodel"
+        required: true
+      security:
+      - jwt: []
+      x-amazon-apigateway-request-validator: "params-only"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+        passthroughBehavior: "when_no_match"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws_proxy"
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/addmodel"
+        required: true
+      responses:
+        "500":
+          description: "500 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+          content: {}
+        "409":
+          description: "409 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+        "200":
+          description: "200 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+      security:
+      - jwt: []
+      x-amazon-apigateway-request-validator: "body-only"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${AddFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+            responseTemplates:
+              application/json: "$input.json('$')"
+          Error500.*:
+            statusCode: "500"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS,\
+                \ PATCH, PUT, DELETE'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: "{ \n\"errors\": [\n    \"Ops, it is an unhandled\
+                \ exception. Please re-try later or contact the team\"\n    ]\n}"
+          Error409.*:
+            statusCode: "409"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+            responseTemplates:
+              application/json: "#set( $response = $input.path('$.errorMessage').replace(\"\
+                Error409: \", \"\"))\n#set( $errors = $response.replace('\"', \"\"))\n\
+                { \n\"errors\": \n  [\n#foreach($item in $errors.split('##'))\n  \
+                \ \"$item\"\n #if($foreach.hasNext),#end\n#end\n  ]\n}"
+        requestTemplates:
+          application/json: "##  See http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html\n\
+            ##  This template will pass through all parameters including path, querystring,\
+            \ header, stage variables, and context through to the integration endpoint\
+            \ via the body/payload\n#set($allParams = $input.params())\n{\n\"body\"\
+            \ : $input.json('$'),\n\"params\" : {\n#foreach($type in $allParams.keySet())\n\
+            \    #set($params = $allParams.get($type))\n\"$type\" : {\n    #foreach($paramName\
+            \ in $params.keySet())\n    \"$paramName\" : \"$util.escapeJavaScript($params.get($paramName))\"\
+            \n        #if($foreach.hasNext),#end\n    #end\n}\n    #if($foreach.hasNext),#end\n\
+            #end\n},\n\"stage-variables\" : {\n#foreach($key in $stageVariables.keySet())\n\
+            \"$key\" : \"$util.escapeJavaScript($stageVariables.get($key))\"\n   \
+            \ #if($foreach.hasNext),#end\n#end\n},\n\"auth\" : {\n    \"email\" :\
+            \ \"$context.authorizer.email\"\n    }\n}\n"
+        passthroughBehavior: "when_no_templates"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws"
+    delete:
+      parameters:
+      - name: "key"
+        in: "query"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/getmodel"
+        required: true
+      security:
+      - jwt: []
+      x-amazon-apigateway-request-validator: "params-only"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DeleteFunction.Arn}/invocations"
+        passthroughBehavior: "when_no_match"
+        type: "aws_proxy"
+    options:
+      responses:
+        "200":
+          description: "200 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+      x-amazon-apigateway-integration:
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS,\
+                \ PATCH, PUT, DELETE'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,Access-Control-Allow-Headers,Access-Control-Request-Method,Access-Control-Request-Headers'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+            responseTemplates:
+              application/json: "{}\n"
+        requestTemplates:
+          application/json: "{\n  \"statusCode\" : 200\n}\n"
+        passthroughBehavior: "when_no_match"
+        type: "mock"
+    patch:
+      parameters:
+      - name: "key"
+        in: "query"
+        required: true
+        schema:
+          type: "string"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/editmodel"
+        required: true
+      responses:
+        "500":
+          description: "500 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+          content: {}
+        "409":
+          description: "409 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+        "200":
+          description: "200 response"
+          headers:
+            Access-Control-Allow-Origin:
+              schema:
+                type: "string"
+            Access-Control-Allow-Headers:
+              schema:
+                type: "string"
+            Access-Control-Allow-Methods:
+              schema:
+                type: "string"
+            Access-Control-Allow-Credentials:
+              schema:
+                type: "string"
+          content: {}
+      security:
+      - jwt: []
+      x-amazon-apigateway-request-validator: "body-and-params"
+      x-amazon-apigateway-integration:
+        httpMethod: "POST"
+        uri:
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${EditFunction.Arn}/invocations"
+        responses:
+          default:
+            statusCode: "200"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+            responseTemplates:
+              application/json: "$input.json('$')"
+          Error500.*:
+            statusCode: "500"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS,\
+                \ PATCH, PUT, DELETE'"
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            responseTemplates:
+              application/json: "{ \n\"errors\": [\n    \"Ops, it is an unhandled\
+                \ exception. Please re-try later or contact the team\"\n    ]\n}"
+          error.*:
+            statusCode: "409"
+            responseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type'"
+              method.response.header.Access-Control-Allow-Credentials: "'true'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+              method.response.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+            responseTemplates:
+              application/json: "#set( $response = $input.path('$.errorMessage').replace(\"\
+                Error409: \", \"\"))\n#set( $errors = $response.replace('\"', \"\"))\n\
+                { \n\"errors\": \n  [\n#foreach($item in $errors.split('##'))\n  \
+                \ \"$item\"\n #if($foreach.hasNext),#end\n#end\n  ]\n}"
+        requestTemplates:
+          application/json: "##  See http://docs.aws.amazon.com/apigateway/latest/developerguide/api-gateway-mapping-template-reference.html\n\
+            ##  This template will pass through all parameters including path, querystring,\
+            \ header, stage variables, and context through to the integration endpoint\
+            \ via the body/payload\n#set($allParams = $input.params())\n{\n\"body\"\
+            \ : $input.json('$'),\n\"params\" : {\n#foreach($type in $allParams.keySet())\n\
+            \    #set($params = $allParams.get($type))\n\"$type\" : {\n    #foreach($paramName\
+            \ in $params.keySet())\n    \"$paramName\" : \"$util.escapeJavaScript($params.get($paramName))\"\
+            \n        #if($foreach.hasNext),#end\n    #end\n}\n    #if($foreach.hasNext),#end\n\
+            #end\n},\n\"stage-variables\" : {\n#foreach($key in $stageVariables.keySet())\n\
+            \"$key\" : \"$util.escapeJavaScript($stageVariables.get($key))\"\n   \
+            \ #if($foreach.hasNext),#end\n#end\n},\n\"auth\" : {\n    \"email\" :\
+            \ \"$context.authorizer.email\"\n    }\n}\n"
+        passthroughBehavior: "when_no_templates"
+        contentHandling: "CONVERT_TO_TEXT"
+        type: "aws"
+components:
+  schemas:
+    addmodel:
+      title: "AddRequest"
+      required:
+      - "key"
+      - "property1"
+      type: "object"
+      properties:
+        key:
+          type: "string"
+        property1:
+          type: "string"
+    editmodel:
+      title: "EditRequest"
+      required:
+      - "property1"
+      type: "object"
+      properties:
+        property1:
+          type: "string"
+    getmodel:
+      required:
+      - "key"
+      type: "object"
+      properties:
+        key:
+          type: "string"
+  securitySchemes:
+    jwt:
+      type: "apiKey"
+      name: "Unused"
+      in: "header"
+      x-amazon-apigateway-authtype: "custom"
+      x-amazon-apigateway-authorizer:
+        authorizerUri: 
+          Fn::Sub: "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${JwtArn}/invocations"
+        authorizerResultTtlInSeconds: 300
+        identitySource: "method.request.header.Authorization, context.httpMethod,\
+          \ context.resourceId"
+        type: "request"
+x-amazon-apigateway-gateway-responses:
+  API_CONFIGURATION_ERROR:
+    statusCode: 500
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  AUTHORIZER_CONFIGURATION_ERROR:
+    statusCode: 500
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  INTEGRATION_TIMEOUT:
+    statusCode: 504
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  EXPIRED_TOKEN:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  THROTTLED:
+    statusCode: 429
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  REQUEST_TOO_LARGE:
+    statusCode: 413
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  QUOTA_EXCEEDED:
+    statusCode: 429
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  MISSING_AUTHENTICATION_TOKEN:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  ACCESS_DENIED:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.messageString ] }"
+  BAD_REQUEST_PARAMETERS:
+    statusCode: 400
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.messageString ]\
+        \ }"
+  DEFAULT_5XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  INTEGRATION_FAILURE:
+    statusCode: 504
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  BAD_REQUEST_BODY:
+    statusCode: 400
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [\"$context.error.validationErrorString\"]\
+        \ }"
+  DEFAULT_4XX:
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [\"$context.error.validationErrorString\"]\
+        \ }"
+  UNSUPPORTED_MEDIA_TYPE:
+    statusCode: 415
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  WAF_FILTERED:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  RESOURCE_NOT_FOUND:
+    statusCode: 404
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  AUTHORIZER_FAILURE:
+    statusCode: 500
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  UNAUTHORIZED:
+    statusCode: 401
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.messageString ] }"
+  INVALID_SIGNATURE:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+  INVALID_API_KEY:
+    statusCode: 403
+    responseParameters:
+      gatewayresponse.header.Access-Control-Allow-Credentials: "'true'"
+      gatewayresponse.header.Access-Control-Allow-Methods: "'GET, POST, OPTIONS, PATCH, PUT, DELETE'"
+      gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+      gatewayresponse.header.Access-Control-Allow-Headers: "'*'"
+    responseTemplates:
+      application/json: "{ \"errors\": [ $context.error.validationErrorString ] }"
+x-amazon-apigateway-request-validators:
+  body-and-params:
+    validateRequestParameters: true
+    validateRequestBody: true
+  params-only:
+    validateRequestParameters: true
+    validateRequestBody: false
+  body-only:
+    validateRequestParameters: false
+    validateRequestBody: true
