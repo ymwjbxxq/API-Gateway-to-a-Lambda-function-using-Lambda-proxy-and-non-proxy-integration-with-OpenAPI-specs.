@@ -1,0 +1,69 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+##########################################################################
+#  Parameters                                                            #
+##########################################################################
+Parameters:
+  StageName:
+    Type: String
+    Default: test
+  DomainName:
+    Type: String
+  CertId:
+    Type: String
+  MyApi1:
+    Description: MyApi1 of the endpoint associated
+    Type: String
+  MyApi2:
+    Description: MyApi2 of the endpoint associated
+    Type: String
+
+Resources:
+##########################################################################
+#  API Gateway Custom Domain                               
+# ##########################################################################
+  CustomDomainName:
+    Type: AWS::ApiGateway::DomainName
+    Properties:
+      RegionalCertificateArn: !Sub "arn:aws:acm:${AWS::Region}:${AWS::AccountId}:certificate/${CertId}"
+      DomainName: !Ref DomainName
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+      Tags:
+        - Key: Name
+          Value: !Ref AWS::StackName
+        - Key: env
+          Value: !Ref StageName
+
+  MyApi1Mapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    DependsOn: CustomDomainName
+    Properties:
+      RestApiId: !Ref MyApi1
+      DomainName: !Ref CustomDomainName
+      BasePath: 'api1'
+      Stage: !Ref StageName
+
+  MyApi2Mapping:
+    Type: AWS::ApiGateway::BasePathMapping
+    DependsOn: CustomDomainName
+    Properties:
+      RestApiId: !Ref MyApi2
+      DomainName: !Ref CustomDomainName
+      BasePath: 'api2'
+      Stage: !Ref StageName
+
+Outputs:
+  RegionalHostedZoneId:
+    Description: The regional hosted zone id of the custom domain
+    Value: !GetAtt CustomDomainName.RegionalHostedZoneId
+    Export:
+      Name: !Sub ${AWS::StackName}-RegionalHostedZoneId
+
+  RegionalDomainName:
+    Description: The regional domain name of the custom domain
+    Value: !GetAtt CustomDomainName.RegionalDomainName
+    Export:
+      Name: !Sub ${AWS::StackName}-RegionalDomainName
