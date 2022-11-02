@@ -1,0 +1,87 @@
+AWSTemplateFormatVersion: 2010-09-09
+
+##########################################################################
+#  Parameters                                                            #
+##########################################################################
+Parameters:
+  Route53HostedZoneId:
+    Type: String
+  Route53DomainName:
+    Type: String
+  CustomDomainHostedZoneId:
+    Type: String
+  CustomDomainName:
+    Type: String
+  ApiEndpoint:
+    Description: "${MyApi}.execute-api.${AWS::Region}.amazonaws.com"
+    Type: String
+  EmailAlarm:
+    Description: This email is to notify health check alarms
+    Type: String
+
+Resources:
+##########################################################################
+#  Health Check                                                          #
+##########################################################################
+  HealthCheck:
+    Type: AWS::Route53::HealthCheck
+    Properties:
+      HealthCheckConfig:
+        FullyQualifiedDomainName: !Ref ApiEndpoint 
+        Port: 443
+        RequestInterval: 30 #sec
+        FailureThreshold: 3
+        ResourcePath: /ping
+        Type: HTTPS
+        Regions:
+          - eu-west-1 #Ireland
+          - ap-southeast-2 #Sydney
+          - us-west-1 #California
+      HealthCheckTags:
+      - Key: Name
+        Value: !Ref ApiEndpoint
+
+##########################################################################
+#  CloudwatchAlarm                                                       #
+##########################################################################
+  Alarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Health Check Alarm
+      AlarmName: !Sub ${AWS::StackName}-HealthCheckAlarm
+      Namespace: AWS/Route53
+      MetricName: HealthCheckStatus
+      Dimensions:
+      - Name: HealthCheckId
+        Value:
+          Ref: HealthCheck
+      ComparisonOperator: LessThanThreshold
+      Period: '900'
+      EvaluationPeriods: '5'
+      Statistic: Minimum
+      Threshold: '1.0'
+      AlarmActions:
+      - Ref: AlarmSNSTopic
+
+##########################################################################
+#  Alarm SNS Topic                                                       #
+##########################################################################
+  AlarmSNSTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+      - Endpoint: !Ref EmailAlarm
+        Protocol: email
+
+##########################################################################
+#  Route53                                                               #
+##########################################################################
+    RecordSet:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref Route53HostedZoneId
+      Name: !Ref Route53DomainName
+      Type: A
+      AliasTarget:
+        HostedZoneId: !Ref CustomDomainHostedZoneId
+        DNSName: !Ref CustomDomainName
